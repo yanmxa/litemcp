@@ -1,7 +1,7 @@
 import json
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from mcp import StdioServerParameters, types, ClientSession, Tool
-from typing import Optional, List, Any, Dict, Callable
+from typing import Optional, List, Any, Dict, Callable, Set
 from agents.tool import FunctionTool
 from agents.run_context import RunContextWrapper
 
@@ -11,9 +11,18 @@ class MCPServer(BaseModel):
     server_params: StdioServerParameters
     exclude_tools: list[str] = []
     client_session: Optional[ClientSession] = None
+    supported_tools: Set[str] = Field(default_factory=set)
 
     class Config:
         arbitrary_types_allowed = True  # Allow arbitrary types like ClientSession
+
+    async def tools(self) -> List[types.Tool]:
+        tools_result = await self.client_session.list_tools()
+        tools = [
+            tool for tool in tools_result.tools if tool.name not in self.exclude_tools
+        ]
+        self.supported_tools = {tool.name for tool in tools}
+        return tools
 
     # Deprecated
     def _build_tool_schemas(self) -> List[dict]:

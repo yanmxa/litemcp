@@ -20,27 +20,78 @@ pip install litemcp
 
 ## 🚀 Quick Start
 
-Here's a concise example demonstrating integration with OpenAI Agent SDK:
+`litemcp` allows you to integrate tools from an MCP server into various LLM runtimes, including the OpenAI Agent SDK, LangChain, and direct OpenAI API calls.
+
+Below are three examples showing how to use `litemcp` in different contexts:
+
+### ✅ OpenAI Agent SDK Integration
 
 ```python
-import asyncio
-import sys
-from mcp_server import MCPServerManager
-from openai_agent_sdk import Agent, Runner
-
 async def main():
     async with MCPServerManager(sys.argv[1]) as server_manager:
         mcp_server_tools = await server_manager.agent_sdk_tools()
+
         agent = Agent(
             name="assistant",
             instructions="You are an AI assistant.",
             tools=mcp_server_tools,
         )
+
         result = await Runner.run(agent, "List all the kubernetes clusters")
         print(result.final_output)
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+### ✅ LangChain Integration
+
+```python
+async def main(config):
+    chat = ChatOpenAI(model="gpt-3.5-turbo-0125")
+    async with MCPServerManager(config) as server_manager:
+
+        # bind tools
+        tools: List[BaseTool] = await server_manager.langchain_tools()
+        chat_with_tools = chat.bind_tools(tools, tool_choice="any")
+
+        messages = [
+            SystemMessage(content="You're a helpful assistant"),
+            HumanMessage(content="List the dirs in the /Users"),
+        ]
+        tool_calls = chat_with_tools.invoke(messages).tool_calls
+
+        # invoke the tool_call
+        tool_map = {tool.name: tool for tool in tools}
+        for tool_call in tool_calls:
+            selected_tool = tool_map[tool_call["name"].lower()]
+            tool_output = await selected_tool.ainvoke(tool_call["args"])
+            print(tool_output)
+```
+
+### ✅ Direct OpenAI API Integration
+
+```python
+async def main(config):
+    client = OpenAI()
+
+    async with MCPServerManager(config) as server_manager:
+        schemas = await server_manager.schemas()
+
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "List the dirs in the /Users"}],
+            tools=schemas,
+        )
+
+        print(completion.choices[0].message.tool_calls)
+
+        # Execute the selected tool
+        tool_call = completion.choices[0].message.tool_calls[0]
+        result = await server_manager.tool_call(
+            tool_call.function.name, tool_call.function.arguments
+        )
+        print(result.content[0].text)
 ```
 
 ### 🔐 Tool Call Validator(Optional)

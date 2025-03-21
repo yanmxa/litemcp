@@ -1,13 +1,17 @@
-from typing import List, Callable, Dict
+import typing
 from contextlib import AsyncExitStack
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from rich.console import Console
 from rich.table import Table
 import asyncio
 import os
+import json
+from typing import Dict, List, Optional, Any, Callable
+from litemcp.agent_sdk import covert_to_agent_sdk_tools, covert_to_openai_tool_schemas
 from litemcp.server import MCPServer
 from litemcp.config import AppConfig
+from litemcp.lanchain_sdk import covert_to_langchain_tools
 
 
 class MCPServerManager:
@@ -27,7 +31,7 @@ class MCPServerManager:
 
     async def __aenter__(self):
         await self.exit_stack.__aenter__()  # Enter exit stack context
-        await self.connect_to_server(self.config_path)
+        await self._connect_to_server(self.config_path)
         if self.display_tools:
             await self._display_available_tools()
         return self
@@ -51,16 +55,65 @@ class MCPServerManager:
     async def agent_sdk_tools(self):
         """Aggregates function tools from all server sessions sequentially."""
         function_tools = []
-
-        for session in self.servers:
-            tools = await session.function_tools(
-                self.tool_validators
-            )  # Await each session call one by one
-            function_tools.extend(tools)
-
+        for server in self.servers:
+            tools = await server.tools()
+            agent_tools = await covert_to_agent_sdk_tools(
+                tools, server.client_session, validators=self.tool_validators
+            )
+            function_tools.extend(agent_tools)
         return function_tools
 
-    async def connect_to_server(self, mcp_server_config: str):
+    async def langchain_tools(self):
+        function_tools = []
+        for server in self.servers:
+            tools = await server.tools()
+            langchain_tools = await covert_to_langchain_tools(
+                tools, server.client_session, validators=self.tool_validators
+            )
+            function_tools.extend(langchain_tools)
+        return function_tools
+
+    async def schemas(self) -> List[Dict]:
+        """
+        Collect and return OpenAI-compatible tool schemas from all MCP servers.
+        """
+        openai_tool_schemas = []
+        for server in self.servers:
+            tools = await server.tools()
+            schemas = await covert_to_openai_tool_schemas(
+                tools, server.client_session, validators=self.tool_validators
+            )
+            openai_tool_schemas.extend(schemas)
+        return openai_tool_schemas
+
+    async def tool_call(
+        self, tool_name: str, tool_args: dict[str, Any]
+    ) -> Optional[types.CallToolResult]:
+        """
+        Call a tool from the corresponding MCP server session.
+
+        Returns:
+            - CallToolResult if the tool exists and was called successfully.
+            - None if the tool was not found or no client session is available.
+        """
+        if isinstance(tool_args, str):
+            tool_args = json.loads(tool_args)
+
+        # human in loop
+        validator = self.tool_validators.get(tool_name)
+        if validator:
+            if result := validator(tool_args):
+                return result
+
+        for server in self.servers:
+            if tool_name in server.supported_tools and server.client_session:
+                return await server.client_session.call_tool(
+                    tool_name, arguments=tool_args
+                )
+
+        return None
+
+    async def _connect_to_server(self, mcp_server_config: str):
         """Connects to an MCP server and initializes session kits."""
         if not mcp_server_config:
             raise ValueError("Server config not set")
