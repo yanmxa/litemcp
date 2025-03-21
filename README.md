@@ -74,7 +74,7 @@ def applier_validator(func_args) -> Optional[str]:
 async with MCPServerManager(sys.argv[1]) as server_manager:
     server_manager.register_validator("yaml_applier", applier_validator)
 
-    mcp_server_tools = await server_manager.function_tools()
+    mcp_server_tools = await server_manager.agent_sdk_tools()
 
     engineer = Agent(...)
 ```
