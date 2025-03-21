@@ -47,8 +47,6 @@ if __name__ == "__main__":
 
 You can add a **custom validation function** to control MCP tool calls. This helps prevent server tools from directly accessing your system without permission—such as integrating a **human-in-the-loop** step.
 
----
-
 #### 1. Define the Validator
 
 ```python
@@ -69,8 +67,6 @@ def applier_validator(func_args) -> Optional[str]:
         sys.exit(0)
     return user_input
 ```
-
----
 
 #### 2. Register the Validator with MCP Server
 
