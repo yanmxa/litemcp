@@ -43,6 +43,46 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### 🔐 Tool Call Validator(Optional)
+
+You can add a **custom validation function** to control MCP tool calls. This helps prevent server tools from directly accessing your system without permission—such as integrating a **human-in-the-loop** step.
+
+---
+
+#### 1. Define the Validator
+
+```python
+def applier_validator(func_args) -> Optional[str]:
+    """
+    Return:
+    - None: allow the tool call
+    - str : block the tool call and return message instead
+    """
+    user_input = console.input(
+        f"  🛠  Cluster - [yellow]{cluster}[/yellow] ⎈ Proceed with this YAML? (yes/no): "
+    ).strip().lower()
+
+    if user_input in {"yes", "y"}:
+        return None
+    if user_input in {"no", "n"}:
+        console.print("[red]Exiting process.[/red]")
+        sys.exit(0)
+    return user_input
+```
+
+---
+
+#### 2. Register the Validator with MCP Server
+
+```python
+async with MCPServerManager(sys.argv[1]) as server_manager:
+    server_manager.register_validator("yaml_applier", applier_validator)
+
+    mcp_server_tools = await server_manager.function_tools()
+
+    engineer = Agent(...)
+```
+
 ## 📖 MCP Configuration Schema
 
 Configure your MCP environment with optional server enabling and tool exclusion:
